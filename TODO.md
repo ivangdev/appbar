@@ -173,6 +173,8 @@ Fuente de verdad: `specs/PDR.yaml` (v1.4). Spec REST: `specs/openapi.yaml` (v1.4
 - [x] E2E Playwright ejecutado localmente (4/4, dos veces seguidas para probar
       idempotencia) con stack real (uvicorn + Next + PostgreSQL): flujo completo,
       login de mesero y WebSocket con dos sesiones.
-- [ ] Build de imágenes Docker: no se pudo construir aquí (usuario `krei` sin acceso
-      al daemon Docker). Dockerfile/compose validados estáticamente; el job `e2e`
-      del CI los construye en cada push.
+- [x] E2E 4/4 ejecutado también contra el **stack Docker** (`docker compose up --build`).
+- [x] Build real de imágenes Docker verificado (backend + frontend), healthchecks,
+      migraciones y seed al arrancar.
+- [x] Perfil Caddy verificado: HTTPS (`https://pos.localhost` → `/health/ready`, login
+      y proxy `/api/*`) y WebSocket (`101 Switching Protocols` con cookie).
