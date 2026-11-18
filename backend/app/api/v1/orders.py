@@ -126,10 +126,19 @@ def close_order(id: uuid.UUID, db: DbSession, _user: CurrentUser) -> Order:  # n
 
 @router.post("/{id}/cancel", response_model=OrderRead)
 def cancel_order(id: uuid.UUID, db: DbSession, _user: CurrentUser) -> Order:  # noqa: A002
-    """Cancela una orden (solo si esta open). La mesa queda libre."""
+    """Cancela una orden sin pagos (open o closed). La mesa queda libre."""
     order = _get_active_or_404(db, id)
-    if order.status != "open":
-        raise HTTPException(status.HTTP_409_CONFLICT, "Solo se puede cancelar una orden 'open'")
+    if order.status not in ("open", "closed"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Solo se puede cancelar una orden 'open' o 'closed' sin pagos",
+        )
+    recalc_order(order)
+    if order.amount_paid > 0:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "La orden tiene pagos: anula primero los pagos",
+        )
 
     order.status = "cancelled"
     order.table.status = "free"
@@ -200,7 +209,7 @@ def update_item(
         item.quantity = payload.quantity
         item.total_price = item.unit_price * payload.quantity
 
-    if payload.notes is not None:
+    if "notes" in payload.model_fields_set:
         item.notes = payload.notes
 
     db.flush()
@@ -226,6 +235,11 @@ def delete_item(item_id: uuid.UUID, db: DbSession, _user: CurrentUser) -> None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "No se puede quitar un item que ya tiene pagos",
+        )
+    if order.status != "open" and len(order.items) == 1:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Una orden cerrada no puede quedar vacia: cancela la orden",
         )
 
     db.delete(item)

@@ -1,37 +1,57 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { Download } from "lucide-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { reportsApi } from "@/lib/api";
+import { dailyReportToCsv, downloadCsv } from "@/lib/csv";
 import { formatCOP, todayBogota } from "@/lib/utils";
 
 export default function ReportPage() {
   const [date, setDate] = useState(todayBogota());
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["report", date],
     queryFn: () => reportsApi.daily(date),
   });
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-2">
         <h1 className="text-lg font-semibold">Corte del dia</h1>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="date">Fecha</Label>
-          <Input
-            id="date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-44"
-          />
+        <div className="flex items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="date">Fecha</Label>
+            <Input
+              id="date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-44"
+            />
+          </div>
+          <Button
+            variant="outline"
+            disabled={!data}
+            onClick={() =>
+              data && downloadCsv(`corte-${data.date}.csv`, dailyReportToCsv(data))
+            }
+          >
+            <Download className="h-4 w-4" /> Exportar CSV
+          </Button>
         </div>
       </div>
 
       {isLoading && <p className="text-sm text-slate-500">Cargando...</p>}
+
+      {isError && (
+        <p className="rounded bg-red-50 p-2 text-sm text-red-600">
+          No se pudo cargar el corte. Intenta de nuevo.
+        </p>
+      )}
 
       {data && (
         <>

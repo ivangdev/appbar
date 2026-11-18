@@ -14,7 +14,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function TablesPage() {
   const queryClient = useQueryClient();
-  const { data: tables = [] } = useQuery({
+  const { data: tables = [], isLoading, isError } = useQuery({
     queryKey: ["tables"],
     queryFn: () => tablesApi.list(),
   });
@@ -36,6 +36,16 @@ export default function TablesPage() {
           {tables.length} mesas · {libres} libres · {ocupadas} ocupadas
         </p>
       </div>
+
+      {isError && (
+        <p className="rounded bg-red-50 p-2 text-sm text-red-600">
+          No se pudieron cargar las mesas. Revisa la conexion e intenta de nuevo.
+        </p>
+      )}
+
+      {isLoading && (
+        <p className="text-sm text-slate-500">Cargando mesas...</p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {tables.map((t) => {
@@ -74,7 +84,7 @@ export default function TablesPage() {
         })}
       </div>
 
-      {tables.length === 0 && (
+      {!isLoading && tables.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-slate-200 bg-white p-10 text-center shadow-sm">
           <p className="text-sm font-medium text-slate-700">Aún no hay mesas</p>
           <p className="text-xs text-slate-400">

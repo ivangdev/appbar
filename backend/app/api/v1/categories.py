@@ -18,7 +18,7 @@ from app.core.db import get_db
 from app.models.category import Category
 from app.models.enums import UserRole
 from app.models.user import User
-from app.schemas.category import CategoryCreate, CategoryRead
+from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -68,6 +68,36 @@ def update_category(
 
     category.name = payload.name
     category.sort_order = payload.sort_order
+    db.commit()
+    db.refresh(category)
+    return category
+
+
+@router.patch("/{id}", response_model=CategoryRead)
+def patch_category(
+    id: uuid.UUID,  # noqa: A002
+    payload: CategoryUpdate,
+    db: DbSession,
+    _user: AdminUser,
+) -> Category:
+    """Actualiza parcialmente una categoria (admin), incluido is_active."""
+    category = db.get(Category, id)
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Categoria no encontrada")
+
+    if payload.name is not None:
+        duplicate = db.scalar(
+            select(Category).where(Category.name == payload.name, Category.id != id)
+        )
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "La categoria ya existe")
+        category.name = payload.name
+
+    if payload.sort_order is not None:
+        category.sort_order = payload.sort_order
+    if payload.is_active is not None:
+        category.is_active = payload.is_active
+
     db.commit()
     db.refresh(category)
     return category

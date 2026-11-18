@@ -46,8 +46,8 @@ def daily_report(
     orders = db.scalars(
         select(Order).where(
             Order.status == "paid",
-            Order.created_at >= start,
-            Order.created_at < end,
+            Order.paid_at >= start,
+            Order.paid_at < end,
         )
     ).all()
 

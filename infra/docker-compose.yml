@@ -1,13 +1,16 @@
 # =============================================================================
-# docker-compose.yml — POS Bar (stack completo: db + backend + frontend)
+# docker-compose.yml — POS Bar (stack completo: db + backend + frontend + caddy)
 #
 # USO (dev local):
-#   cd infra && cp .env.example .env
+#   cd infra && cp .env.example .env   # editar passwords/secretos
 #   docker compose up --build
-#   # Backend:  http://localhost:8000/docs
-#   # Frontend: http://localhost:3000
+#   # Frontend:  http://localhost:3000
+#   # API docs:  http://localhost:8000/docs
 #
-# Lee las credenciales del archivo .env de esta carpeta.
+# USO (con HTTPS/WSS local o VPS):
+#   docker compose --profile proxy up -d --build
+#   # Caddy publica 80/443 y usa DOMAIN del .env
+#
 # En produccion (Dokploy) normalmente se despliega cada servicio por separado;
 # este compose sirve para levantar todo el stack de una vez (local o VPS).
 # =============================================================================
@@ -40,6 +43,7 @@ services:
       db:
         condition: service_healthy
     environment:
+      APP_ENV: ${APP_ENV:-development}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -49,8 +53,23 @@ services:
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_HOURS: ${ACCESS_TOKEN_EXPIRE_HOURS:-24}
       COOKIE_SECURE: ${COOKIE_SECURE:-False}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-True}
+      # Seed idempotente al arrancar (ver CMD del Dockerfile).
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Administrador}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@posbar.com}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?define INITIAL_ADMIN_PASSWORD}
+      SEED_DEMO_USERS: ${SEED_DEMO_USERS:-False}
+      INITIAL_WAITER_NAME: ${INITIAL_WAITER_NAME:-Mesero}
+      INITIAL_WAITER_EMAIL: ${INITIAL_WAITER_EMAIL:-mesero@posbar.com}
+      INITIAL_WAITER_PASSWORD: ${INITIAL_WAITER_PASSWORD:-mesero12345}
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   frontend:
     build:
@@ -58,15 +77,52 @@ services:
       args:
         # URL que usara el navegador para el WebSocket (no la interna).
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        # URL interna (server-side) del proxy Next /api/* -> backend.
+        # Es build-time: cambiarla exige reconstruir la imagen.
+        API_INTERNAL_URL: http://backend:8000
     container_name: posbar-frontend
     restart: unless-stopped
     depends_on:
-      - backend
-    environment:
-      # URL interna (server-side) del proxy Next /api/* -> backend.
-      API_INTERNAL_URL: http://backend:8000
+      backend:
+        condition: service_healthy
     ports:
       - "3000:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Perfil opcional: HTTPS/WSS con Caddy (Let's Encrypt). En Dokploy se puede
+  # omitir si el proxy de la plataforma ya termina TLS.
+  caddy:
+    image: caddy:2-alpine
+    container_name: posbar-caddy
+    profiles: ["proxy"]
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:-pos.localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   db_data:
+  caddy_data:
+  caddy_config:

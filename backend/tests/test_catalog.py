@@ -124,3 +124,44 @@ def test_waiter_only_sees_active_products(
 
     login(waiter_user.email)
     assert client.get("/v1/products").json() == []
+
+
+def test_patch_category(client: TestClient, admin_user: User, login: Callable[[str], None]) -> None:
+    login(admin_user.email)
+    category = _create_category(client, "Cervezas")
+
+    response = client.patch(
+        f"/v1/categories/{category['id']}",
+        json={"name": "Cervezas Artesanales", "sort_order": 7},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Cervezas Artesanales"
+    assert body["sort_order"] == 7
+
+
+def test_patch_product_and_reactivate(
+    client: TestClient, admin_user: User, login: Callable[[str], None]
+) -> None:
+    login(admin_user.email)
+    category = _create_category(client, "Cervezas")
+    created = client.post(
+        "/v1/products",
+        json={
+            "name": "Aguila",
+            "category_id": category["id"],
+            "price": 4000,
+            "cost": 2500,
+            "sku": "AGU-001",
+        },
+    ).json()
+
+    response = client.patch(
+        f"/v1/products/{created['id']}",
+        json={"price": 4500, "sku": None, "is_active": False},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["price"] == 4500
+    assert body["sku"] is None
+    assert body["is_active"] is False

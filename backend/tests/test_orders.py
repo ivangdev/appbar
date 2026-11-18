@@ -143,7 +143,9 @@ def test_close_and_cancel_order(
     assert client.post(f"/v1/orders/{order['id']}/close").status_code == 409
 
     cancelled = client.post(f"/v1/orders/{order['id']}/cancel")
-    assert cancelled.status_code == 409  # ya no esta 'open'
+    assert cancelled.status_code == 200  # cerrada sin pagos: se puede cancelar
+    assert cancelled.json()["status"] == "cancelled"
+    assert client.get("/v1/tables").json()[0]["status"] == "free"
 
 
 def test_cancel_open_order_frees_table(
@@ -177,3 +179,25 @@ def test_order_history(
     history = client.get("/v1/orders/history")
     assert history.status_code == 200
     assert len(history.json()) == 1
+
+
+def test_clear_item_notes(
+    client: TestClient,
+    menu: dict[str, object],
+    waiter_user: User,
+    login: Callable[[str], None],
+) -> None:
+    """Enviar notes=null borra la nota (no se ignora el null)."""
+    table, product = menu["table"], menu["product"]
+    assert isinstance(table, dict) and isinstance(product, dict)
+    login(waiter_user.email)
+    order = _open_order(client, table["id"])
+    item = client.post(
+        f"/v1/orders/{order['id']}/items",
+        json={"product_id": product["id"], "quantity": 1, "notes": "sin hielo"},
+    ).json()
+    assert item["notes"] == "sin hielo"
+
+    cleared = client.patch(f"/v1/orders/items/{item['id']}", json={"notes": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["notes"] is None

@@ -10,10 +10,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.categories import router as categories_router
@@ -24,6 +28,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.tables import router as tables_router
 from app.api.v1.users import router as users_router
 from app.api.ws import router as ws_router
+from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.core.websocket import manager
 
@@ -35,7 +40,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="POS Bar API", version="1.3.0", lifespan=lifespan)
+app = FastAPI(title="POS Bar API", version="1.4.0", lifespan=lifespan)
 
 # Rate limiting (slowapi): estado + manejador de error 429.
 app.state.limiter = limiter
@@ -62,5 +67,18 @@ app.include_router(ws_router)
 
 @app.get("/health", tags=["health"])
 def health() -> dict[str, str]:
-    """Chequeo simple de que el servidor esta arriba."""
+    """Liveness: el proceso esta arriba."""
     return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["health"])
+def health_ready(db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    """Readiness: el proceso puede atender consultas (la BD responde)."""
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Base de datos no disponible",
+        ) from exc
+    return {"status": "ready"}

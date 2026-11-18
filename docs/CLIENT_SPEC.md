@@ -40,7 +40,6 @@
 - Lista en vivo de todas las mesas con su estado:
   - 🟢 Libre
   - 🔴 Ocupada
-  - 🟡 Pagando
 
 ### Paso 2 — Abrir orden
 - Clic en mesa **Libre** → se crea una orden.
@@ -53,7 +52,7 @@
 
 ### Paso 4 — Cerrar la orden
 - Al cerrar, se muestra el **total a pagar**.
-- La mesa pasa a estado **Pagando**.
+- La mesa sigue **Ocupada** hasta que se pague por completo.
 
 ### Paso 5 — Cobrar (abonos parciales)
 - El mesero registra un abono ingresando monto + método:
@@ -62,12 +61,17 @@
   - Ej: "3 poker", "yo invito a Juan".
 
 - El abono se **acumula** (pago parcial):
-  - Mientras no cubre el total → orden **Parcialmente pagada**, mesa sigue **Pagando**.
+  - Mientras no cubre el total → orden **Parcialmente pagada**, mesa **Ocupada**.
   - Cuando la suma cubre el total → orden **Pagada**, mesa vuelve a **Libre**.
 
-- **Cancelar abono**: el mesero puede anular un abono.
-  - Si quedan abonos pendientes → sigue en **Pagando**.
-  - Si se cancela todo → mesa vuelve a **Ocupada** (se pueden seguir pidiendo cosas).
+- **Cancelar abono**: el mesero puede anular un abono (queda registrado con
+  quién y cuándo lo anuló).
+  - Si quedan abonos vigentes → la orden sigue **Parcialmente pagada**.
+  - Si se cancela todo → la mesa sigue **Ocupada** (se pueden seguir pidiendo cosas).
+
+### Paso 6 — Historial y corte
+- El mesero puede consultar las órdenes del día (historial).
+- El corte del día se puede **exportar a CSV** para contabilidad.
 
 ---
 
@@ -76,11 +80,11 @@
 | Módulo | Acción | Detalle |
 |---|---|---|
 | 🔐 Login | Ingresar credenciales | Email + password |
-| 👤 Meseros | Agregar / Editar / Desactivar | Nombre, email, password, rol |
-| 📦 Categorías | Crear / Editar / Eliminar | Nombre, orden en menú |
-| 🛒 Productos | Crear / Editar / Eliminar | Nombre, categoría, precio, costo, SKU |
+| 👤 Meseros | Agregar / Editar / Desactivar / Reset password | Nombre, email, password, rol |
+| 📦 Categorías | Crear / Editar / Activar-Desactivar | Nombre, orden en menú |
+| 🛒 Productos | Crear / Editar / Activar-Desactivar | Nombre, categoría, precio, costo, SKU |
 | 🪑 Mesas | Crear / Editar / Eliminar | Número, etiqueta (opcional) |
-| 📊 Reportes | Ver corte del día | Total vendido, por mesa, por producto _(meseros: solo lectura)_ |
+| 📊 Reportes | Ver corte del día + exportar CSV | Total vendido, por mesa, por producto _(meseros: solo lectura)_ |
 
 ---
 
@@ -147,12 +151,13 @@ Ejemplo visual:
 ## ✅ 10. Alcance (Lo que incluye / no incluye)
 
 ### Incluye
-- Gestión de mesas en tiempo real.
+- Gestión de mesas en tiempo real (WebSocket).
 - Órdenes con subtotal automático.
 - Pagos parciales acumulables (efectivo / Nequi / transferencia).
-- Cancelación de abonos parciales (mesa vuelve a "Ocupada").
-- Corte del día (para admin y meseros).
-- Login para admin y meseros.
+- Cancelación de abonos parciales con auditoría (quién y cuándo).
+- Historial de órdenes del día.
+- Corte del día (para admin y meseros) con exportación CSV.
+- Login para admin y meseros, con reset de contraseña por admin.
 
 ### No incluye (ahora)
 - Impuestos (IVA).
@@ -166,10 +171,12 @@ Ejemplo visual:
 
 | Archivo | Propósito |
 |---|---|
+| `README.md` | Inicio rápido, scripts y reglas de negocio |
 | `docs/CLIENT_SPEC.md` | Este documento (para cliente) |
-| `specs/PDR.yaml` | Especificación técnica maestra |
-| `specs/openapi.yaml` | (Próximo) Spec API REST |
-| `AGENTS.md` | (Próximo) Convenciones del repo |
+| `docs/DEPLOY.md` | Despliegue, backups y checklist de producción |
+| `specs/PDR.yaml` | Especificación técnica maestra (v1.4) |
+| `specs/openapi.yaml` | Spec API REST (v1.4.0) |
+| `AGENTS.md` | Convenciones del repo |
 
 ---
 

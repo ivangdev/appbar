@@ -20,6 +20,25 @@ export const http = axios.create({
   withCredentials: true,
 });
 
+// Sesion expirada: los endpoints protegidos responden 401. Se avisa a la app
+// (Providers escucha el evento) para limpiar el estado y volver al login.
+http.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    const url = error.config?.url ?? "";
+    const isLogin = url.includes("/auth/token");
+    if (
+      error.response?.status === 401 &&
+      !isLogin &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/login"
+    ) {
+      window.dispatchEvent(new Event("posbar:unauthorized"));
+    }
+    return Promise.reject(error);
+  },
+);
+
 export function apiError(error: unknown): string {
   const err = error as AxiosError<{ detail?: string; error?: string }>;
   return (
@@ -45,8 +64,10 @@ export const categoriesApi = {
   list: () => http.get<Category[]>("/categories").then((r) => r.data),
   create: (body: { name: string; sort_order?: number }) =>
     http.post<Category>("/categories", body).then((r) => r.data),
-  update: (id: string, body: { name: string; sort_order?: number }) =>
-    http.put<Category>(`/categories/${id}`, body).then((r) => r.data),
+  update: (
+    id: string,
+    body: { name?: string; sort_order?: number; is_active?: boolean },
+  ) => http.patch<Category>(`/categories/${id}`, body).then((r) => r.data),
   remove: (id: string) =>
     http.delete(`/categories/${id}`).then(() => undefined),
 };
@@ -68,13 +89,14 @@ export const productsApi = {
   update: (
     id: string,
     body: {
-      name: string;
-      category_id: string;
-      price: number;
+      name?: string;
+      category_id?: string;
+      price?: number;
       cost?: number;
       sku?: string | null;
+      is_active?: boolean;
     },
-  ) => http.put<Product>(`/products/${id}`, body).then((r) => r.data),
+  ) => http.patch<Product>(`/products/${id}`, body).then((r) => r.data),
   remove: (id: string) => http.delete(`/products/${id}`).then(() => undefined),
 };
 
@@ -102,10 +124,10 @@ export const ordersApi = {
     http.post<Order>(`/orders/${orderId}/cancel`).then((r) => r.data),
   addItem: (
     orderId: string,
-    body: { product_id: string; quantity: number; notes?: string },
+    body: { product_id: string; quantity: number; notes?: string | null },
   ) =>
     http.post<OrderItem>(`/orders/${orderId}/items`, body).then((r) => r.data),
-  updateItem: (itemId: string, body: { quantity?: number; notes?: string }) =>
+  updateItem: (itemId: string, body: { quantity?: number; notes?: string | null }) =>
     http.patch<OrderItem>(`/orders/items/${itemId}`, body).then((r) => r.data),
   removeItem: (itemId: string) =>
     http.delete(`/orders/items/${itemId}`).then(() => undefined),
@@ -154,7 +176,13 @@ export const usersApi = {
   }) => http.post<User>("/users", body).then((r) => r.data),
   update: (
     id: string,
-    body: { name?: string; email?: string; role?: string; is_active?: boolean },
+    body: {
+      name?: string;
+      email?: string;
+      role?: string;
+      is_active?: boolean;
+      password?: string;
+    },
   ) => http.patch<User>(`/users/${id}`, body).then((r) => r.data),
   remove: (id: string) => http.delete(`/users/${id}`).then(() => undefined),
 };

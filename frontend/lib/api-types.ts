@@ -233,7 +233,32 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /** Actualizar parcialmente categoria (admin; incluye is_active) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CategoryUpdate"];
+                };
+            };
+            responses: {
+                /** @description actualizado */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                409: components["responses"]["Conflict"];
+            };
+        };
         trace?: never;
     };
     "/products": {
@@ -353,7 +378,32 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /** Actualizar parcialmente producto (admin; incluye is_active y SKU) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ProductUpdate"];
+                };
+            };
+            responses: {
+                /** @description actualizado */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                409: components["responses"]["Conflict"];
+            };
+        };
         trace?: never;
     };
     "/tables": {
@@ -741,7 +791,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancelar orden (solo si open) -> status cancelled, mesa free */
+        /** Cancelar orden sin pagos (open o closed) -> status cancelled, mesa free. Si tiene pagos: 409 (anular pagos primero). */
         post: {
             parameters: {
                 query?: never;
@@ -780,7 +830,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancelar pago. Revierte allocations. Recalcula estado: amount_paid==0 -> closed; >0 -> partially_paid. Si la orden estaba paid -> paid_at=null. Mesa occupied salvo remaining==0. */
+        /** Cancelar pago (soft-cancel auditado). Revierte allocations y conserva la fila con cancelled_at/cancelled_by. Recalcula estado: amount_paid==0 -> closed; >0 -> partially_paid. Si la orden estaba paid -> paid_at=null. Mesa occupied salvo remaining==0. Re-cancelar -> 409. */
         post: {
             parameters: {
                 query?: never;
@@ -854,7 +904,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Corte de dia (admin + mesero, TZ America/Bogota). Solo ordenes paid. */
+        /** Corte de dia (admin + mesero, TZ America/Bogota). Solo ordenes paid con paid_at dentro del dia. */
         get: {
             parameters: {
                 query?: {
@@ -1002,6 +1052,81 @@ export interface paths {
         };
         trace?: never;
     };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Liveness (proceso arriba) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description {"status":"ok"} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness (la base de datos responde) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description {"status":"ready"} */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Base de datos no disponible */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1047,6 +1172,11 @@ export interface components {
             /** @enum {string} */
             role?: "admin" | "waiter";
             is_active?: boolean;
+            /**
+             * Format: password
+             * @description Nueva password (reset por admin). Opcional.
+             */
+            password?: string;
         };
         CategoryRead: {
             /** Format: uuid */
@@ -1059,6 +1189,11 @@ export interface components {
             name: string;
             /** @default 0 */
             sort_order: number;
+        };
+        CategoryUpdate: {
+            name?: string;
+            sort_order?: number;
+            is_active?: boolean;
         };
         ProductRead: {
             /** Format: uuid */
@@ -1095,6 +1230,17 @@ export interface components {
              */
             cost: number;
             sku?: string | null;
+        };
+        ProductUpdate: {
+            name?: string;
+            /** Format: uuid */
+            category_id?: string;
+            /** Format: int64 */
+            price?: number;
+            /** Format: int64 */
+            cost?: number;
+            sku?: string | null;
+            is_active?: boolean;
         };
         TableRead: {
             /** Format: uuid */
@@ -1157,6 +1303,22 @@ export interface components {
         };
         PaymentAllocation: {
             /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * @description unidades del item cubiertas por este pago
+             * @example 3
+             */
+            quantity: number;
+            /**
+             * Format: int64
+             * @description monto cubierto por esta asignacion (pesos COP)
+             */
+            amount: number;
+        };
+        PaymentAllocationInput: {
+            /** Format: uuid */
             item_id: string;
             /**
              * @description unidades del item cubiertas por este pago
@@ -1175,7 +1337,7 @@ export interface components {
             method: "cash" | "nequi" | "transfer";
             reference?: string | null;
             /** @description Pago parcial por item (pokers). Omitido o vacio = pago total del remaining (auto-asigna items pendientes). */
-            allocations?: components["schemas"]["PaymentAllocation"][];
+            allocations?: components["schemas"]["PaymentAllocationInput"][];
         };
         OrderRead: {
             /** Format: uuid */
@@ -1229,6 +1391,16 @@ export interface components {
             payment_date: string;
             /** Format: uuid */
             user_id?: string;
+            /**
+             * Format: date-time
+             * @description Si no es null, el pago fue anulado (no suma a amount_paid)
+             */
+            cancelled_at?: string | null;
+            /**
+             * Format: uuid
+             * @description Usuario que anulo el pago
+             */
+            cancelled_by?: string | null;
             allocations?: components["schemas"]["PaymentAllocation"][];
         };
         PaymentCancelResponse: {

@@ -5,16 +5,33 @@
 # Caddy obtiene TLS automaticamente (Let's Encrypt).
 #
 # Enrutamiento:
-#   /ws/*  -> backend  (WebSocket: NO pasa por el proxy de Next)
-#   /*     -> frontend (Next reenvia /api/* al backend server-side)
+#   /ws/*      -> backend  (WebSocket: NO pasa por el proxy de Next)
+#   /health*   -> backend  (liveness/readiness para monitoreo)
+#   /*         -> frontend (Next reenvia /api/* al backend server-side)
 # =============================================================================
 
 {$DOMAIN:pos.localhost} {
 	encode zstd gzip
 
+	# Headers de seguridad (el backend esta detras de este proxy).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
 	# WebSocket de mesas (handshake con cookie HttpOnly).
 	@ws path /ws/*
 	handle @ws {
+		reverse_proxy backend:8000
+	}
+
+	# Salud del backend (util para uptime checks y load balancers).
+	@health path /health /health/*
+	handle @health {
 		reverse_proxy backend:8000
 	}
 

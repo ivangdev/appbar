@@ -58,6 +58,21 @@ class ProductRead(BaseModel):
     is_active: bool
 
 
+class ProductUpdate(BaseModel):
+    """Actualizacion parcial de un producto (solo admin).
+
+    Permite editar precio/costo/SKU, mover de categoria y reactivar
+    (is_active=True) un producto con soft-delete.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    category_id: UUID | None = None
+    price: int | None = Field(default=None, ge=0, le=10_000_000)
+    cost: int | None = Field(default=None, ge=0, le=10_000_000)
+    sku: str | None = Field(default=None, max_length=64, pattern=r"^[A-Z0-9_-]+$")
+    is_active: bool | None = None
+
+
 class ProductReadAdmin(ProductRead):
     """Producto visible para el admin (incluye cost)."""
 

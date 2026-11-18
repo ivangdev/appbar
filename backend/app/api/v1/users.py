@@ -35,6 +35,16 @@ def _find_by_email(db: Session, email: str, exclude_id: uuid.UUID | None = None)
     return db.scalar(stmt)
 
 
+def _active_admin_count(db: Session) -> int:
+    """Cantidad de admins activos (para no dejar el sistema sin admin)."""
+    total = db.scalar(
+        select(func.count())
+        .select_from(User)
+        .where(User.role == UserRole.ADMIN.value, User.is_active.is_(True))
+    )
+    return int(total or 0)
+
+
 @router.get("", response_model=list[UserRead])
 def list_users(_user: AdminUser, db: DbSession) -> list[User]:
     """Lista todos los usuarios (admin)."""
@@ -64,12 +74,38 @@ def update_user(
     id: uuid.UUID,  # noqa: A002
     payload: UserUpdate,
     db: DbSession,
-    _user: AdminUser,
+    current_user: AdminUser,
 ) -> User:
-    """Edita un usuario (admin). 409 si el email ya esta en uso."""
+    """Edita un usuario (admin). 409 si el email ya esta en uso o si dejaria el sistema sin admin."""
     user = db.get(User, id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuario no encontrado")
+
+    if user.id == current_user.id:
+        if payload.role is not None and payload.role.value != UserRole.ADMIN.value:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "No puedes quitarte el rol de admin",
+            )
+        if payload.is_active is False:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "No puedes desactivar tu propia cuenta",
+            )
+
+    removes_admin = (
+        user.role == UserRole.ADMIN.value
+        and user.is_active
+        and (
+            (payload.role is not None and payload.role.value != UserRole.ADMIN.value)
+            or payload.is_active is False
+        )
+    )
+    if removes_admin and _active_admin_count(db) <= 1:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Debe existir al menos un admin activo",
+        )
 
     if payload.email is not None:
         if _find_by_email(db, payload.email, exclude_id=id) is not None:
@@ -82,6 +118,8 @@ def update_user(
         user.role = payload.role.value
     if payload.is_active is not None:
         user.is_active = payload.is_active
+    if payload.password is not None:
+        user.password_hash = hash_password(payload.password)
 
     db.commit()
     db.refresh(user)
@@ -97,6 +135,12 @@ def deactivate_user(id: uuid.UUID, db: DbSession, user: AdminUser) -> None:  # n
     target = db.get(User, id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuario no encontrado")
+
+    if target.role == UserRole.ADMIN.value and target.is_active and _active_admin_count(db) <= 1:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Debe existir al menos un admin activo",
+        )
 
     target.is_active = False
     db.commit()

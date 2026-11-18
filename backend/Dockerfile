@@ -28,10 +28,10 @@ COPY alembic ./alembic
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
-    CMD curl -fsS http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+    CMD curl -fsS http://localhost:8000/health/ready || exit 1
 
-# Aplica migraciones y levanta el servidor.
+# Aplica migraciones, crea el admin inicial (idempotente) y levanta el servidor.
 # --proxy-headers + forwarded-allow-ips: confia en X-Forwarded-For de Caddy/Next
 # para que el rate-limit y los logs vean la IP real del cliente.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "alembic upgrade head && python -m app.db.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]

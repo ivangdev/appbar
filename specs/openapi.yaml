@@ -16,7 +16,7 @@ info:
     Dinero: pesos colombianos (COP) como ENTEROS, sin centavos (se redondea ROUND_HALF_UP).
     cost de productos: visible SOLO para admin; el mesero solo ve price.
     WebSocket: autenticado por cookie HttpOnly access_token (jamas token en la URL).
-  version: "1.3.0"
+  version: "1.4.0"
 
 servers:
   - url: https://bar.local/v1    # cambia por tu dominio DuckDNS / real
@@ -84,6 +84,11 @@ components:
         email: { type: string, format: email }
         role: { type: string, enum: [admin, waiter] }
         is_active: { type: boolean }
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: "Nueva password (reset por admin). Opcional."
 
     # ---- Catalogo ----
     CategoryRead:
@@ -101,6 +106,13 @@ components:
       properties:
         name: { type: string }
         sort_order: { type: integer, default: 0 }
+
+    CategoryUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        sort_order: { type: integer, minimum: 0 }
+        is_active: { type: boolean }
 
     ProductRead:
       type: object
@@ -123,6 +135,16 @@ components:
         price: { type: integer, format: int64, minimum: 0, description: "pesos COP" }
         cost: { type: integer, format: int64, minimum: 0, default: 0, description: "pesos COP (solo admin)" }
         sku: { type: string, nullable: true }
+
+    ProductUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        category_id: { type: string, format: uuid }
+        price: { type: integer, format: int64, minimum: 0 }
+        cost: { type: integer, format: int64, minimum: 0 }
+        sku: { type: string, nullable: true }
+        is_active: { type: boolean }
 
     # ---- Mesas ----
     TableRead:
@@ -186,6 +208,15 @@ components:
 
     PaymentAllocation:
       type: object
+      required: [id, item_id, quantity, amount]
+      properties:
+        id: { type: string, format: uuid }
+        item_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, example: 3, description: "unidades del item cubiertas por este pago" }
+        amount: { type: integer, format: int64, description: "monto cubierto por esta asignacion (pesos COP)" }
+
+    PaymentAllocationInput:
+      type: object
       required: [item_id, quantity]
       properties:
         item_id: { type: string, format: uuid }
@@ -201,7 +232,7 @@ components:
         allocations:
           type: array
           description: "Pago parcial por item (pokers). Omitido o vacio = pago total del remaining (auto-asigna items pendientes)."
-          items: { $ref: "#/components/schemas/PaymentAllocation" }
+          items: { $ref: "#/components/schemas/PaymentAllocationInput" }
 
     OrderRead:
       type: object
@@ -235,6 +266,8 @@ components:
         reference: { type: string, nullable: true }
         payment_date: { type: string, format: date-time }
         user_id: { type: string, format: uuid }
+        cancelled_at: { type: string, format: date-time, nullable: true, description: "Si no es null, el pago fue anulado (no suma a amount_paid)" }
+        cancelled_by: { type: string, format: uuid, nullable: true, description: "Usuario que anulo el pago" }
         allocations:
           type: array
           items: { $ref: "#/components/schemas/PaymentAllocation" }
@@ -369,6 +402,17 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/CategoryCreate" } } }
       responses: { "200": { description: actualizado } }
+    patch:
+      summary: Actualizar parcialmente categoria (admin; incluye is_active)
+      tags: [categories]
+      security: [{ cookieAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CategoryUpdate" } } }
+      responses:
+        "200": { description: actualizado }
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       summary: Soft-delete categoria (admin)
       tags: [categories]
@@ -406,6 +450,17 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ProductCreate" } } }
       responses: { "200": { description: actualizado } }
+    patch:
+      summary: Actualizar parcialmente producto (admin; incluye is_active y SKU)
+      tags: [products]
+      security: [{ cookieAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProductUpdate" } } }
+      responses:
+        "200": { description: actualizado }
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       summary: Soft-delete producto (admin)
       tags: [products]
@@ -536,7 +591,7 @@ paths:
 
   /orders/{id}/cancel:
     post:
-      summary: Cancelar orden (solo si open) -> status cancelled, mesa free
+      summary: "Cancelar orden sin pagos (open o closed) -> status cancelled, mesa free. Si tiene pagos: 409 (anular pagos primero)."
       tags: [orders]
       security: [{ cookieAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -546,7 +601,7 @@ paths:
 
   /payments/{id}/cancel:
     post:
-      summary: "Cancelar pago. Revierte allocations. Recalcula estado: amount_paid==0 -> closed; >0 -> partially_paid. Si la orden estaba paid -> paid_at=null. Mesa occupied salvo remaining==0."
+      summary: "Cancelar pago (soft-cancel auditado). Revierte allocations y conserva la fila con cancelled_at/cancelled_by. Recalcula estado: amount_paid==0 -> closed; >0 -> partially_paid. Si la orden estaba paid -> paid_at=null. Mesa occupied salvo remaining==0. Re-cancelar -> 409."
       tags: [payments]
       security: [{ cookieAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -571,7 +626,7 @@ paths:
   # ----------------------------------------------------------------- Reportes
   /reports/daily:
     get:
-      summary: Corte de dia (admin + mesero, TZ America/Bogota). Solo ordenes paid.
+      summary: "Corte de dia (admin + mesero, TZ America/Bogota). Solo ordenes paid con paid_at dentro del dia."
       tags: [reports]
       security: [{ cookieAuth: [] }]
       parameters: [{ name: date, in: query, schema: { type: string, format: date }, required: false }]
@@ -614,3 +669,22 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses: { "204": { description: desactivado } }
+
+  # ----------------------------------------------------------------- Health
+  # Viven fuera del prefijo /v1; el servidor de la ruta lo sobreescribe.
+  /health:
+    get:
+      servers: [{ url: / }]
+      summary: Liveness (proceso arriba)
+      tags: [health]
+      responses:
+        "200": { description: '{"status":"ok"}' }
+  /health/ready:
+    get:
+      servers: [{ url: / }]
+      summary: Readiness (la base de datos responde)
+      tags: [health]
+      responses:
+        "200": { description: '{"status":"ready"}' }
+        "503": { description: Base de datos no disponible }
+

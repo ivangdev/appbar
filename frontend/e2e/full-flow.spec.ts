@@ -1,13 +1,22 @@
 import { expect, test } from "@playwright/test";
 
-// Flujo end-to-end completo (scope PDR): login → catalogo → mesa → orden → pago → corte.
+// Flujo end-to-end completo (scope PDR): login -> catalogo -> mesa -> orden -> pago -> corte.
 // Requiere el stack levantado y las credenciales seed del backend.
-test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
-  // Use static names to avoid timestamp-dependent flakiness
-  const categoryName = "Cerveza Artesanal";
-  const productName = "Hamburguesa";
-  const tableNumber = 5;
+//
+// Los nombres y el numero de mesa se generan por corrida para que el test sea
+// idempotente: se puede repetir sin chocar con los datos de corridas previas.
 
+/** Sufijo unico por corrida (categorias/productos). */
+const runId = Date.now().toString(36);
+
+/** Numero de mesa unico (las mesas con ordenes no se pueden borrar). */
+const uniqueTableNumber = () => 1000 + Math.floor(Math.random() * 900_000);
+
+const categoryName = `Cerveza ${runId}`;
+const productName = `Hamburguesa ${runId}`;
+
+test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
+  const tableNumber = uniqueTableNumber();
   // --- Login (admin) ---
   await page.goto("/login");
   await page.getByLabel("Email").fill("admin@posbar.com");
@@ -33,11 +42,13 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
   await page.getByRole("button", { name: "Mesas" }).click();
   await page.getByPlaceholder("Numero").fill(String(tableNumber));
   await page.getByRole("button", { name: "Agregar" }).click();
-  await expect(page.getByText(`Mesa ${tableNumber}`)).toBeVisible();
+  await expect(
+    page.getByText(`Mesa ${tableNumber}`, { exact: true }),
+  ).toBeVisible();
 
   // --- Abrir orden en la mesa ---
   await page.goto("/tables");
-  await page.getByText(`Mesa ${tableNumber}`).click();
+  await page.getByText(`Mesa ${tableNumber}`, { exact: true }).click();
   await page.getByRole("button", { name: "Abrir orden" }).click();
 
   // --- Agregar el producto ---
@@ -47,7 +58,7 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
 
   // --- Pagar total ---
   await page.getByRole("button", { name: /pagar total/i }).click();
-  // After paying, the status badge should show "paid"
+  // Tras pagar, el badge muestra el estado real de la orden.
   await expect(page.getByText("paid")).toBeVisible();
 
   // --- Corte del dia ---
@@ -56,7 +67,6 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
   await expect(page.getByText("Total vendido")).toBeVisible();
 });
 
-// Nuevo test: login mesero + verificación básica
 test("login mesero y ver dashboard", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Email").fill("mesero@posbar.com");
@@ -64,4 +74,58 @@ test("login mesero y ver dashboard", async ({ page }) => {
   await page.getByRole("button", { name: /ingresar/i }).click();
   await page.waitForURL("/tables");
   await expect(page.getByRole("heading", { name: /mesas/i })).toBeVisible();
+});
+
+test("dos sesiones ven el cambio de mesa en vivo (WebSocket)", async ({
+  browser,
+}) => {
+  const tableNumber = uniqueTableNumber();
+
+  // Dos contextos aislados = dos sesiones con cookies distintas.
+  const adminContext = await browser.newContext();
+  const waiterContext = await browser.newContext();
+  const admin = await adminContext.newPage();
+  const waiter = await waiterContext.newPage();
+
+  try {
+    await admin.goto("/login");
+    await admin.getByLabel("Email").fill("admin@posbar.com");
+    await admin.getByLabel("Password").fill("admin12345");
+    await admin.getByRole("button", { name: /ingresar/i }).click();
+    await admin.waitForURL("/tables");
+
+    await waiter.goto("/login");
+    await waiter.getByLabel("Email").fill("mesero@posbar.com");
+    await waiter.getByLabel("Password").fill("mesero12345");
+    await waiter.getByRole("button", { name: /ingresar/i }).click();
+    await waiter.waitForURL("/tables");
+
+    // Mesa nueva via API (la cookie de admin viaja en la APIRequestContext).
+    const created = await admin.request.post("/api/v1/tables", {
+      data: { table_number: tableNumber },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    // El admin deja abierto el tablero; no lo recarga durante el test.
+    await admin.goto("/tables");
+    const adminCard = admin.getByRole("link").filter({
+      has: admin.getByText(`Mesa ${tableNumber}`, { exact: true }),
+    });
+    await expect(adminCard).toContainText("Libre");
+
+    // El mesero abre la orden en otra sesion.
+    await waiter.goto("/tables");
+    await waiter
+      .getByRole("link")
+      .filter({ has: waiter.getByText(`Mesa ${tableNumber}`, { exact: true }) })
+      .click();
+    await waiter.getByRole("button", { name: "Abrir orden" }).click();
+    await expect(waiter.getByText("open")).toBeVisible();
+
+    // El tablero del admin se actualiza solo, por el WebSocket.
+    await expect(adminCard).toContainText("Ocupada", { timeout: 15_000 });
+  } finally {
+    await adminContext.close();
+    await waiterContext.close();
+  }
 });

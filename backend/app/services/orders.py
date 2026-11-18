@@ -35,14 +35,26 @@ def remaining_of(order: Order) -> int:
 
 
 def recalc_order(order: Order) -> None:
-    """Recalcula subtotal, total y pagado a partir de items y pagos."""
+    """Recalcula subtotal, total y pagado a partir de items y pagos vigentes.
+
+    Los pagos cancelados se conservan por auditoria pero NO suman a
+    `amount_paid`.
+    """
     order.subtotal = sum(item.total_price for item in order.items)
     order.total_amount = order.subtotal
-    order.amount_paid = sum(payment.amount for payment in order.payments)
+    order.amount_paid = sum(
+        payment.amount for payment in order.payments if payment.cancelled_at is None
+    )
 
 
 def apply_payment_state(order: Order, table: Table) -> None:
-    """Ajusta estado de la orden y de la mesa segun los pagos aplicados."""
+    """Ajusta estado de la orden y de la mesa segun los pagos aplicados.
+
+    La mesa solo se libera cuando la orden queda pagada (o se cancela, lo que
+    maneja el endpoint). Una orden activa vacia sigue manteniendo la mesa
+    ocupada: si la mesa dijera "libre" pero existiera una orden activa, abrir
+    otra daria 409 y el tablero mentiria.
+    """
     recalc_order(order)
     remaining = remaining_of(order)
 
@@ -54,11 +66,12 @@ def apply_payment_state(order: Order, table: Table) -> None:
         order.status = OrderStatus.PARTIALLY_PAID.value
         order.paid_at = None
     elif order.status in (OrderStatus.PAID.value, OrderStatus.PARTIALLY_PAID.value):
-        # Se quitaron todos los pagos: vuelve a 'closed'.
+        # Se quitaron/cancelaron todos los pagos: vuelve a 'closed'.
         order.status = OrderStatus.CLOSED.value
         order.paid_at = None
 
-    table.status = TableStatus.FREE.value if remaining == 0 else TableStatus.OCCUPIED.value
+    is_paid = order.status == OrderStatus.PAID.value
+    table.status = TableStatus.FREE.value if is_paid else TableStatus.OCCUPIED.value
 
 
 def active_order_for_table(db: Session, table_id: object) -> Order | None:

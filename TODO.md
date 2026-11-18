@@ -1,6 +1,16 @@
 # ✅ POS Bar — Plan de trabajo incremental (specs-first)
 
-Fuente de verdad: `specs/PDR.yaml` (v1.3). Spec REST: `specs/openapi.yaml` (v1.3.0).
+Fuente de verdad: `specs/PDR.yaml` (v1.4). Spec REST: `specs/openapi.yaml` (v1.4.0).
+
+## Decisiones cerradas (specs v1.4)
+- [x] Pago cancelado = **soft-cancel auditado** (`cancelled_at`/`cancelled_by`); no suma a `amount_paid`.
+- [x] La mesa queda **libre solo si la orden está `paid` o `cancelled`** (antes: `remaining == 0`).
+- [x] Una orden cerrada sin pagos se puede **cancelar**; una orden cerrada **no puede quedar vacía**.
+- [x] `PATCH /categories/{id}` y `PATCH /products/{id}` (incluye `is_active`/SKU).
+- [x] Reset de password por admin vía `PATCH /users/{id}` (campo `password` opcional).
+- [x] El admin no puede quitarse su rol/desactivarse ni dejar el sistema sin admin activo.
+- [x] `GET /health` (liveness) y `GET /health/ready` (readiness con `SELECT 1`).
+- [x] Contrato OpenAPI reemplaza Pact en el MVP; E2E incluye WebSocket.
 
 ## Decisiones cerradas (specs v1.3)
 - [x] Dinero en **pesos COP enteros** (sin centavos); redondeo `ROUND_HALF_UP`.
@@ -11,7 +21,7 @@ Fuente de verdad: `specs/PDR.yaml` (v1.3). Spec REST: `specs/openapi.yaml` (v1.3
 
 ## Decisiones cerradas (specs v1.2)
 - [x] Mesa enum = `free` / `occupied` (se eliminó `paying`).
-- [x] Mesa `free` ⟺ `remaining == 0`; se recalcula tras cada operación.
+- [x] Mesa `free` cuando la orden termina en `paid` o `cancelled` (v1.4).
 - [x] Token JWT `access_exp = 24h`, **sin refresh token**.
 - [x] Pago parcial **por ítem/cantidad** (pokers) → `payment_allocations`.
 - [x] Pago **total** sin seleccionar ítems (auto-asigna pendientes).
@@ -114,11 +124,32 @@ Fuente de verdad: `specs/PDR.yaml` (v1.3). Spec REST: `specs/openapi.yaml` (v1.3
   - Frontend `npm run lint` · `npm run build` · `vitest` (8 ✓)
   - OpenAPI validado (`$ref` rotos = 0)
 
+## Fase 8 — Hardening, auditoría y release (HECHA)
+- [x] Healthchecks: `GET /health` + `GET /health/ready` (conexión a BD) y Docker `HEALTHCHECK`.
+- [x] Config de producción validada al arrancar (`APP_ENV=production` exige secretos fuertes).
+- [x] Seed configurable e idempotente (`SEED_DEMO_USERS`, admin inicial por env).
+- [x] Auditoría de pagos: soft-cancel con `cancelled_at` / `cancelled_by` (migración `af641611f644`).
+- [x] `PATCH /categories/{id}` y `PATCH /products/{id}` (reactivar, editar parcial).
+- [x] Reset de password por admin (`PATCH /users/{id}` con `password`).
+- [x] Protecciones de admin: no autodesactivarse/autodegradarse; siempre ≥ 1 admin activo.
+- [x] Limpiar nota de un ítem enviando `notes: null` (usa `model_fields_set`).
+- [x] Orden cerrada vacía: no se puede borrar el último ítem; se cancela la orden (sin pagos).
+- [x] WebSocket same-origin cuando `NEXT_PUBLIC_API_URL` está vacío (`||`, no `??`).
+- [x] Frontend: historial de órdenes, exportación CSV del corte, confirmaciones de acciones.
+- [x] Next.js **16.4.6** (advisory de seguridad corregido) en worktree `worktree/next-security-upgrade`.
+- [x] `ruff check` / `ruff format --check` / `mypy --strict` limpios.
+- [x] Tests backend **68** pasando contra PostgreSQL real (migraciones desde cero).
+- [x] Tests frontend **11** (vitest), `lint`, `tsc --noEmit` y `next build` OK.
+- [x] E2E idempotente (nombres únicos) + E2E de WebSocket con dos sesiones.
+- [x] CI en `.github/workflows/ci.yml`: backend (Postgres), frontend + contrato, E2E con Compose.
+- [x] Docs: `README.md`, `docs/DEPLOY.md` (Dokploy, backups, rotación, checklist).
+- [x] Specs sincronizadas: PDR 1.4, OpenAPI 1.4.0, FastAPI 1.4.0, `api-types.ts` regenerado.
+
 ## Estado de validación continua
-- [x] `openapi.yaml` válido + refs OK (v1.3.0)
-- [x] Migraciones alineadas al `PDR.yaml` (spec-driven)
-- [x] 53 tests backend pasando (`pytest tests/ -q`)
-- [x] Frontend construye y pasa lint + vitest
+- [x] `openapi.yaml` válido + `api-types.ts` regenerado sin diff (v1.4.0)
+- [x] Migraciones alineadas al `PDR.yaml` (spec-driven), aplicadas desde cero en CI/local
+- [x] 68 tests backend pasando (`pytest tests/ -q`) contra PostgreSQL 16
+- [x] Frontend construye y pasa lint + tsc + vitest (11 tests)
 
 ## Incidencias
 - [x] Reparados `app/api/v1/auth.py` y `app/schemas/user.py` (habían quedado como
@@ -139,6 +170,8 @@ Fuente de verdad: `specs/PDR.yaml` (v1.3). Spec REST: `specs/openapi.yaml` (v1.3
 - [x] Tests unitarios nuevos: `tests/auth-store.test.ts` + `tests/use-tables-socket.test.ts`.
 - [x] E2E completo `e2e/full-flow.spec.ts` (login→catálogo→mesa→orden→pago→reporte).
 - [ ] E2E Playwright (`frontend/e2e/`) requiere `npx playwright install` (navegadores)
-      y el stack levantado (`docker compose up`); no se ejecutó en este entorno.
+      y el stack levantado (`docker compose up`); en este entorno no se ejecutó
+      (sin navegadores y sin acceso al daemon Docker). Corre en el job `e2e` del CI.
 - [ ] No se pudo *construir* las imágenes Docker aquí (usuario `krei` sin acceso al
-      daemon Docker). Los Dockerfile/compose se validaron estáticamente.
+      daemon Docker). Los Dockerfile/compose se validaron estáticamente y el CI
+      los construye en el job `e2e`.

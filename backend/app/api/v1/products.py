@@ -23,6 +23,7 @@ from app.schemas.product import (
     ProductCreate,
     ProductRead,
     ProductReadAdmin,
+    ProductUpdate,
 )
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -107,6 +108,44 @@ def update_product(
     product.price = payload.price
     product.cost = payload.cost
     product.sku = payload.sku
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@router.patch("/{id}", response_model=ProductReadAdmin)
+def patch_product(
+    id: uuid.UUID,  # noqa: A002
+    payload: ProductUpdate,
+    db: DbSession,
+    _user: AdminUser,
+) -> Product:
+    """Actualiza parcialmente un producto (admin), incluido is_active/SKU."""
+    product = db.get(Product, id)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Producto no encontrado")
+
+    if payload.category_id is not None and db.get(Category, payload.category_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Categoria no encontrada")
+
+    if payload.sku is not None:
+        duplicate = db.scalar(select(Product).where(Product.sku == payload.sku, Product.id != id))
+        if duplicate is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "El SKU ya existe")
+
+    if payload.name is not None:
+        product.name = payload.name
+    if payload.category_id is not None:
+        product.category_id = payload.category_id
+    if payload.price is not None:
+        product.price = payload.price
+    if payload.cost is not None:
+        product.cost = payload.cost
+    if "sku" in payload.model_fields_set:
+        product.sku = payload.sku
+    if payload.is_active is not None:
+        product.is_active = payload.is_active
+
     db.commit()
     db.refresh(product)
     return product

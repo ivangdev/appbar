@@ -55,6 +55,11 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 ignore = ["E501"]  # la longitud se controla con line-length
 
+[tool.ruff.lint.per-file-ignores]
+# Migraciones generadas por Alembic: conservan el estilo de la plantilla
+# (typing.Union, imports, etc.) para no romper el historial.
+"alembic/versions/*" = ["I001", "UP007", "UP035", "W291"]
+
 [tool.ruff.format]
 quote-style = "double"
 

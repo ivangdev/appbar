@@ -45,9 +45,15 @@ class Payment(CreatedAtMixin, Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # Cancelacion auditada: el pago NO se borra, se marca como anulado.
+    cancelled_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    cancelled_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     order: Mapped[Order] = relationship(back_populates="payments")
-    user: Mapped[User] = relationship()
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+    cancelled_by_user: Mapped[User | None] = relationship(foreign_keys=[cancelled_by])
     allocations: Mapped[list[PaymentAllocation]] = relationship(
         back_populates="payment", cascade="all, delete-orphan"
     )

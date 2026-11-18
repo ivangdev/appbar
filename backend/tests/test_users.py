@@ -92,3 +92,41 @@ def test_cannot_deactivate_self(
     login(admin_user.email)
     response = client.delete(f"/v1/users/{admin_user.id}")
     assert response.status_code == 409
+
+
+def test_cannot_demote_or_deactivate_self(
+    client: TestClient, admin_user: User, login: Callable[[str], None]
+) -> None:
+    login(admin_user.email)
+    assert client.patch(f"/v1/users/{admin_user.id}", json={"role": "waiter"}).status_code == 409
+    assert client.patch(f"/v1/users/{admin_user.id}", json={"is_active": False}).status_code == 409
+
+
+def test_admin_resets_user_password(
+    client: TestClient, admin_user: User, login: Callable[[str], None]
+) -> None:
+    login(admin_user.email)
+    created = client.post(
+        "/v1/users",
+        json={
+            "name": "Reset",
+            "email": "reset@posbar.com",
+            "password": "secret12345",
+            "role": "waiter",
+        },
+    ).json()
+
+    reset = client.patch(f"/v1/users/{created['id']}", json={"password": "nuevaClave123"})
+    assert reset.status_code == 200
+
+    client.post("/v1/auth/logout")
+    ok = client.post(
+        "/v1/auth/token",
+        json={"email": "reset@posbar.com", "password": "nuevaClave123"},
+    )
+    assert ok.status_code == 200
+    old = client.post(
+        "/v1/auth/token",
+        json={"email": "reset@posbar.com", "password": "secret12345"},
+    )
+    assert old.status_code == 401

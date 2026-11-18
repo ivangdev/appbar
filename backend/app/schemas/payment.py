@@ -60,4 +60,6 @@ class PaymentRead(BaseModel):
     reference: str | None
     payment_date: dt.datetime
     user_id: UUID
+    cancelled_at: dt.datetime | None = None
+    cancelled_by: UUID | None = None
     allocations: list[AllocationRead] = Field(default_factory=list)

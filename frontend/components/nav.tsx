@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Beer, BarChart3, LayoutGrid, LogOut, Settings } from "lucide-react";
+import { Beer, BarChart3, LayoutGrid, LogOut, Settings, History } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { useAuth } from "@/stores/auth";
 
 const links = [
   { href: "/tables", label: "Mesas", icon: LayoutGrid },
+  { href: "/orders", label: "Historial", icon: History },
   { href: "/report", label: "Corte", icon: BarChart3 },
   { href: "/admin", label: "Admin", adminOnly: true, icon: Settings },
 ];
