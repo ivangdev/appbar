@@ -72,6 +72,10 @@ python -m app.db.seed
 pytest tests/ -q
 ```
 
+> Los tests esperan una base **vacía** (no siembres antes de correrlos). Usa una
+> BD dedicada: crea `pos_bar_test`, aplica `alembic upgrade head` y ejecuta
+> `POSTGRES_DB=pos_bar_test pytest tests/ -q`.
+
 ### Frontend (`frontend/`)
 
 ```bash

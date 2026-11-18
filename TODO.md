@@ -140,6 +140,7 @@ Fuente de verdad: `specs/PDR.yaml` (v1.4). Spec REST: `specs/openapi.yaml` (v1.4
 - [x] `ruff check` / `ruff format --check` / `mypy --strict` limpios.
 - [x] Tests backend **68** pasando contra PostgreSQL real (migraciones desde cero).
 - [x] Tests frontend **11** (vitest), `lint`, `tsc --noEmit` y `next build` OK.
+- [x] E2E **4** pasando contra el stack real (dos corridas seguidas).
 - [x] E2E idempotente (nombres únicos) + E2E de WebSocket con dos sesiones.
 - [x] CI en `.github/workflows/ci.yml`: backend (Postgres), frontend + contrato, E2E con Compose.
 - [x] Docs: `README.md`, `docs/DEPLOY.md` (Dokploy, backups, rotación, checklist).
@@ -169,9 +170,9 @@ Fuente de verdad: `specs/PDR.yaml` (v1.4). Spec REST: `specs/openapi.yaml` (v1.4
       Ahora limpia la sesión local siempre.
 - [x] Tests unitarios nuevos: `tests/auth-store.test.ts` + `tests/use-tables-socket.test.ts`.
 - [x] E2E completo `e2e/full-flow.spec.ts` (login→catálogo→mesa→orden→pago→reporte).
-- [ ] E2E Playwright (`frontend/e2e/`) requiere `npx playwright install` (navegadores)
-      y el stack levantado (`docker compose up`); en este entorno no se ejecutó
-      (sin navegadores y sin acceso al daemon Docker). Corre en el job `e2e` del CI.
-- [ ] No se pudo *construir* las imágenes Docker aquí (usuario `krei` sin acceso al
-      daemon Docker). Los Dockerfile/compose se validaron estáticamente y el CI
-      los construye en el job `e2e`.
+- [x] E2E Playwright ejecutado localmente (4/4, dos veces seguidas para probar
+      idempotencia) con stack real (uvicorn + Next + PostgreSQL): flujo completo,
+      login de mesero y WebSocket con dos sesiones.
+- [ ] Build de imágenes Docker: no se pudo construir aquí (usuario `krei` sin acceso
+      al daemon Docker). Dockerfile/compose validados estáticamente; el job `e2e`
+      del CI los construye en cada push.

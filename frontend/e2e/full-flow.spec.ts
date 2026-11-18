@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 // Flujo end-to-end completo (scope PDR): login -> catalogo -> mesa -> orden -> pago -> corte.
 // Requiere el stack levantado y las credenciales seed del backend.
@@ -9,20 +9,30 @@ import { expect, test } from "@playwright/test";
 /** Sufijo unico por corrida (categorias/productos). */
 const runId = Date.now().toString(36);
 
-/** Numero de mesa unico (las mesas con ordenes no se pueden borrar). */
-const uniqueTableNumber = () => 1000 + Math.floor(Math.random() * 900_000);
+/** Numero de mesa libre (el backend solo admite 1..999). */
+async function freeTableNumber(page: Page): Promise<number> {
+  const response = await page.request.get("/api/v1/tables");
+  expect(response.ok()).toBeTruthy();
+  const tables = (await response.json()) as { table_number: number }[];
+  const used = new Set(tables.map((table) => table.table_number));
+  for (let number = 1; number <= 999; number += 1) {
+    if (!used.has(number)) return number;
+  }
+  throw new Error("no hay numeros de mesa libres (1..999)");
+}
 
 const categoryName = `Cerveza ${runId}`;
 const productName = `Hamburguesa ${runId}`;
 
 test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
-  const tableNumber = uniqueTableNumber();
   // --- Login (admin) ---
   await page.goto("/login");
   await page.getByLabel("Email").fill("admin@posbar.com");
   await page.getByLabel("Password").fill("admin12345");
   await page.getByRole("button", { name: /ingresar/i }).click();
   await page.waitForURL("/tables");
+
+  const tableNumber = await freeTableNumber(page);
 
   // --- Admin: crear categoria ---
   await page.goto("/admin");
@@ -43,7 +53,7 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
   await page.getByPlaceholder("Numero").fill(String(tableNumber));
   await page.getByRole("button", { name: "Agregar" }).click();
   await expect(
-    page.getByText(`Mesa ${tableNumber}`, { exact: true }),
+    page.getByText(new RegExp(`^Mesa ${tableNumber}\\b`)),
   ).toBeVisible();
 
   // --- Abrir orden en la mesa ---
@@ -52,7 +62,12 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
   await page.getByRole("button", { name: "Abrir orden" }).click();
 
   // --- Agregar el producto ---
-  await page.getByRole("combobox").first().selectOption(productName);
+  const productSelect = page.getByLabel("Producto");
+  const optionValue = await productSelect
+    .locator("option", { hasText: productName })
+    .getAttribute("value");
+  expect(optionValue).toBeTruthy();
+  await productSelect.selectOption(optionValue as string);
   await page.getByRole("button", { name: "Agregar" }).click();
   await expect(page.getByText(productName).first()).toBeVisible();
 
@@ -79,8 +94,6 @@ test("login mesero y ver dashboard", async ({ page }) => {
 test("dos sesiones ven el cambio de mesa en vivo (WebSocket)", async ({
   browser,
 }) => {
-  const tableNumber = uniqueTableNumber();
-
   // Dos contextos aislados = dos sesiones con cookies distintas.
   const adminContext = await browser.newContext();
   const waiterContext = await browser.newContext();
@@ -93,6 +106,8 @@ test("dos sesiones ven el cambio de mesa en vivo (WebSocket)", async ({
     await admin.getByLabel("Password").fill("admin12345");
     await admin.getByRole("button", { name: /ingresar/i }).click();
     await admin.waitForURL("/tables");
+
+    const tableNumber = await freeTableNumber(admin);
 
     await waiter.goto("/login");
     await waiter.getByLabel("Email").fill("mesero@posbar.com");

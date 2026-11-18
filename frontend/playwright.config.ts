@@ -6,7 +6,10 @@ import { defineConfig, devices } from "@playwright/test";
 //   npm run e2e
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // Los tests comparten la BD y crean mesas (numero unico 1..999): se ejecutan
+  // en serie para que no compitan por el mismo numero.
+  fullyParallel: false,
+  workers: 1,
   retries: 0,
   reporter: "list",
   use: {
