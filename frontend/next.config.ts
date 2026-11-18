@@ -7,6 +7,10 @@ const API_INTERNAL_URL =
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    // Marca la actualizacion de seguridad aplicada por el agente de Next.
+    agentUpgrade: "security",
+  },
   async rewrites() {
     // Proxy /api/* -> backend, para que la cookie HttpOnly viaje en el mismo origen.
     return [
