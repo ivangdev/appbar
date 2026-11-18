@@ -1,117 +1,178 @@
 # Despliegue — POS Bar
 
-Guía operativa para llevar el stack a producción (VPS con Dokploy o Docker
-Compose + Caddy) y mantenerlo.
+Guía operativa para llevar el stack a producción en el VPS, mantenerlo y
+verificarlo. La fuente de verdad de las reglas de negocio es `specs/PDR.yaml`.
 
 ## 1. Arquitectura
 
 ```
-navegador ──HTTPS/WSS──> Caddy ──> frontend (Next.js, :3000)
-                              └──> backend  (FastAPI,  :8000) ──> PostgreSQL 16
+navegador ──HTTPS/WSS──> Caddy (:80/:443) ──> frontend (Next.js, :3000)
+                                          └──> backend  (FastAPI, :8000) ──> PostgreSQL 16
 ```
 
 - El frontend hace de proxy same-origin: `/api/*` → backend. Así la cookie
   **HttpOnly** viaja sin CORS.
-- El WebSocket (`/ws/tables`) va directo al backend (Caddy lo enruta).
+- Caddy enruta `/ws/*` y `/health*` directo al backend; el resto al frontend
+  (ver `infra/Caddyfile`).
 - En producción el navegador no necesita saber la URL del backend: deja
-  `NEXT_PUBLIC_API_URL` **vacío** para usar el origin actual.
+  `NEXT_PUBLIC_API_URL` **vacío** para usar el origin actual (`wss://...`).
 
-## 2. Acceso por VPN
+## 2. Red del servidor
 
-El servidor del proyecto se alcanza dentro de la VPN en:
+| Nombre | Valor | Uso |
+|---|---|---|
+| IP pública (WAN del router) | `186.144.148.182` | HTTPS del POS desde cualquier lugar |
+| IP del VPS en la VPN | `192.168.80.17` | SSH y administración |
+| Router | `192.168.80.1` | Redirección de puertos |
 
-```
-VPS (VPN IP): 192.168.80.17
-```
+Comprobación en el servidor (necesita `curl`, o `wget -qO-` / `python3`):
 
-- Conéctate primero a OpenVPN (perfil `~/vpn/ivan_vpn.ovpn`) y después usa esa IP
-  para SSH y para las pruebas HTTP.
-- Si el POS será **solo interno**, el dominio debe resolver a `192.168.80.17` y
-  el firewall debe permitir 80/443 únicamente desde la red VPN.
-- Si el POS será **público**, usa la IP pública del VPS y mantén la VPN solo para
-  administración (SSH/DB). En ese caso no publiques los puertos del backend ni
-  de PostgreSQL a internet.
-- Con IP privada, Caddy **no puede** usar el reto HTTP-01 de Let's Encrypt: hay que
-  configurar el reto DNS-01 (o un certificado interno) para HTTPS.
-
-Antes de desplegar, agrega este override de producción para no exponer puertos:
-
-```yaml
-# infra/docker-compose.prod.yml (fragmento)
-services:
-  db:
-    ports: []
-  backend:
-    ports: []
-  frontend:
-    ports: []
+```bash
+curl -4 -s https://api.ipify.org; echo   # 186.144.148.182
+ip -4 -br addr                          # ens18: 192.168.80.17/24
+ss -ltnp | grep -E ':(80|443)\b' || echo "libres"
 ```
 
-Caddy sigue publicando 80/443; si el acceso es solo por VPN, restringe esos
-puertos en UFW a la interfaz/subred de la VPN.
+### Redirección de puertos (router)
 
-## 3. Variables de entorno
+En `http://192.168.80.1` → *Port Forwarding*, añadir:
 
-Copia `infra/.env.example` a `infra/.env` (o configúralas en Dokploy).
+| Puerto externo | IP interna | Puerto interno | Protocolo |
+|---|---|---|---|
+| 80 | `192.168.80.17` | 80 | TCP |
+| 443 | `192.168.80.17` | 443 | TCP |
+
+El 22 **no** se publica: SSH sigue siendo solo por VPN (el router ya redirige
+el puerto externo de OpenVPN). No exponer PostgreSQL ni el backend.
+
+> Docker publica puertos con `iptables` directamente y **ignora `ufw`**. El
+> cortafuegos efectivo es el router. Por eso el override de producción no
+> publica los puertos internos.
+
+## 3. Dominio gratuito y HTTPS
+
+Caddy obtiene el certificado con el reto **HTTP-01**, que solo necesita el
+puerto 80 abierto. No hay que comprar dominio ni usar DNS-01.
+
+Opciones gratuitas:
+
+| Proveedor | Nombre | Comentario |
+|---|---|---|
+| **DuckDNS** | `posbar.duckdns.org` | Login con GitHub/Google, token inmediato. Recomendado. |
+| deSEC | `posbar.dedyn.io` | Requiere registro con correo. Más robusto. |
+
+El registro `A` debe apuntar a `186.144.148.182`. DuckDNS actualiza la IP solo;
+con deSEC hay que publicar la IP con su API.
+
+Si el ISP cambia la IP (lo habitual en conexiones residenciales), mantener el
+registro actualizado con cron en el VPS:
+
+```cron
+*/5 * * * * curl -fsS 'https://www.duckdns.org/update?domains=TU_SUBDOMINIO&token=TU_TOKEN&ip=' >/dev/null 2>&1
+```
+
+El `DOMAIN` de `infra/.env` debe ser exactamente ese nombre.
+
+## 4. Variables de entorno
+
+Copiar `infra/.env.example` a `infra/.env` en el VPS y ajustar:
 
 | Variable | Producción | Nota |
 |---|---|---|
 | `APP_ENV` | `production` | Activa la validación de seguridad al arrancar |
-| `POSTGRES_DB` / `POSTGRES_USER` | los tuyos | |
+| `DOMAIN` | `posbar.duckdns.org` | Lo usa Caddy para el certificado |
+| `POSTGRES_DB` / `POSTGRES_USER` | `pos_bar` / `pos_user` | |
 | `POSTGRES_PASSWORD` | aleatoria | `openssl rand -base64 24` |
-| `POSTGRES_HOST` | `db` (compose) | En Dokploy, el host interno del servicio |
-| `JWT_SECRET` | ≥ 32 chars aleatorio | `openssl rand -hex 32` |
+| `JWT_SECRET` | ≥ 48 chars aleatorio | `openssl rand -hex 32` |
 | `COOKIE_SECURE` | `True` | Obligatorio con HTTPS |
 | `RATE_LIMIT_ENABLED` | `True` | |
 | `INITIAL_ADMIN_EMAIL` | tu correo | Se crea si no existe (idempotente) |
-| `INITIAL_ADMIN_PASSWORD` | ≥ 8 chars, distinta del default | Cámbiala tras el primer login |
+| `INITIAL_ADMIN_PASSWORD` | fuerte, distinta de la default | Cámbiala tras el primer login |
 | `SEED_DEMO_USERS` | `False` | No crear meseros de ejemplo |
-| `NEXT_PUBLIC_API_URL` | vacío (mismo origen) | Build-time: exige rebuild |
-| `DOMAIN` | `pos.tudominio.com` | Solo perfil `proxy` (Caddy) |
+| `NEXT_PUBLIC_API_URL` | **vacío** | Build-time: exige rebuild |
 
 Con `APP_ENV=production` la app **falla al arrancar** si detecta el secreto de
 desarrollo, `JWT_SECRET` corto, `COOKIE_SECURE=False`, la password de admin por
 defecto o `SEED_DEMO_USERS=True`.
 
-## 4. Despliegue con Docker Compose
+## 5. Despliegue en el VPS
+
+Preparación única (si Docker no está instalado):
 
 ```bash
-cd infra
-cp .env.example .env      # editar según la tabla anterior
-docker compose up -d --build
-docker compose ps
-curl -fsS http://localhost:8000/health/ready
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER && newgrp docker
 ```
 
-Con HTTPS/WSS (Caddy + Let's Encrypt):
+Copiar el repo al servidor y arrancar:
 
 ```bash
-docker compose --profile proxy up -d --build
+# Desde tu máquina, con la VPN conectada:
+rsync -av --exclude '.git' --exclude 'frontend/node_modules' --exclude 'backend/.venv' \
+  /home/krei/Dev/app-bar/ ivan@192.168.80.17:~/app-bar/
+
+# En el VPS:
+cd ~/app-bar/infra
+cp .env.example .env            # editar según la tabla anterior
+chmod 600 .env
+
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile proxy up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
 ```
 
-Caddy usa `DOMAIN`; para pruebas locales `pos.localhost` funciona sin DNS.
+`infra/docker-compose.prod.yml` usa `ports: !reset []` para quitar los puertos
+publicados del compose base. Sin ese override, quedarían expuestos `5432`,
+`8000` y `3000`.
 
-## 5. Despliegue en Dokploy
+Verificación:
 
-1. Crear un proyecto y una base **PostgreSQL** (o usar el servicio `db` del
-   compose). Anotar host/puerto/credenciales internas.
-2. Servicio **backend**:
-   - Build context: `backend/` (Dockerfile incluido).
-   - Variables: las de la tabla (con `POSTGRES_HOST` = host interno de la BD).
-   - Puerto: `8000`. Healthcheck: `/health/ready`.
-   - El `CMD` ya ejecuta `alembic upgrade head` + seed idempotente al arrancar.
-3. Servicio **frontend**:
-   - Build context: `frontend/`.
-   - Build args: `NEXT_PUBLIC_API_URL=""` y
-     `API_INTERNAL_URL=http://<backend-interno>:8000`.
-   - Puerto: `3000`.
-4. Dominio + TLS: apuntar el dominio al frontend. Caddy/Dokploy debe enrutar
-   `/ws/*` al backend (WebSocket) y el resto al frontend, o exponer el backend
-   en un subdominio y poner esa URL en `NEXT_PUBLIC_API_URL`.
-5. Smoke test: login → abrir mesa → agregar ítem → abono parcial → pago total →
-   corte del día. Verificar que otra sesión ve la mesa cambiar sin recargar.
+```bash
+curl -fsS https://TU_DOMINIO/health/ready     # {"status":"ready"}
+curl -fsSI https://TU_DOMINIO | head -5       # 200/301 y cabeceras de seguridad
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50 caddy
+```
 
-## 6. Migraciones y seed
+Desde el celular **con datos móviles** (sin VPN) comprobar que carga
+`https://TU_DOMINIO/login`.
+
+### Actualizaciones
+
+```bash
+cd ~/app-bar && git pull
+cd infra && docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  --profile proxy up -d --build
+```
+
+`NEXT_PUBLIC_API_URL` es un *build arg*: si cambia, hay que recrear la imagen
+de frontend (`--build`).
+
+## 6. Desarrollo local
+
+```bash
+cd infra && cp .env.example .env
+docker compose up --build                       # http://localhost:3000
+docker compose --profile proxy up -d --build    # https://pos.localhost
+```
+
+Tests y calidad (ver `AGENTS.md`):
+
+```bash
+pytest backend/tests/ -x
+npm run lint && npx tsc --noEmit && npx vitest run && npm run build
+E2E_BASE_URL=http://localhost:3000 npx playwright test
+```
+
+## 7. Alternativa: Dokploy (no usada en esta entrega)
+
+Dokploy es gratuito pero **no proporciona HTTPS gratis**: sus dominios
+`sslip.io` integrados son solo HTTP. Requiere un dominio propio y añade
+Traefik, Swarm y un panel (~500 MB–1 GB extra). Para un único servicio se
+prefirieron Caddy y el compose, que ya están verificados y son reproducibles
+desde el repo. Si en el futuro se alojan varias apps en el mismo servidor,
+Dokploy pasa a ser una opción razonable.
+
+## 8. Migraciones y seed
 
 - Al arrancar el contenedor: `alembic upgrade head && python -m app.db.seed`.
 - Manual:
@@ -121,25 +182,25 @@ Caddy usa `DOMAIN`; para pruebas locales `pos.localhost` funciona sin DNS.
   ```
 - El seed crea el admin inicial **solo si su email no existe**; nunca
   sobreescribe passwords.
-- Reset de password de un usuario: `PATCH /v1/users/{id}` con `{"password": "..."}`
-  usando una sesión de admin (también disponible en Admin → Usuarios).
+- Reset de password: `PATCH /v1/users/{id}` con `{"password": "..."}` desde
+  una sesión de admin (también en Admin → Usuarios).
 
-## 7. Backups de PostgreSQL
+## 9. Backups de PostgreSQL
 
 Los scripts `infra/backup.sh` e `infra/restore.sh` usan el formato custom de
 `pg_dump` (más seguro para restaurar):
 
 ```bash
-cd infra
+cd ~/app-bar/infra
 ./backup.sh                      # crea backups/posbar-<fecha>.dump
 BACKUP_DIR=/var/backups/posbar ./backup.sh
 ./restore.sh backups/posbar-2026-11-18-120000.dump
 ```
 
-Respaldo diario con cron (ajusta la ruta y el usuario):
+Respaldo diario con cron:
 
 ```cron
-0 3 * * * cd /home/krei/Dev/app-bar/infra && BACKUP_DIR=/var/backups/posbar ./backup.sh >> /var/log/posbar-backup.log 2>&1
+0 3 * * * cd /home/ivan/app-bar/infra && BACKUP_DIR=/var/backups/posbar ./backup.sh >> /var/log/posbar-backup.log 2>&1
 ```
 
 Recomendaciones:
@@ -149,35 +210,37 @@ Recomendaciones:
 - Probar el restore al menos una vez antes de la entrega.
 - `docker compose down` **sin** `-v` conserva el volumen `db_data`.
 
-## 8. Rotación de secretos
+## 10. Rotación de secretos
 
-- `JWT_SECRET`: al cambiarlo se invalidan todas las sesiones (los usuarios
-  vuelven a hacer login). Hazlo fuera de horario de servicio.
+- `JWT_SECRET`: al cambiarlo se invalidan todas las sesiones. Hazlo fuera de
+  horario de servicio.
 - `POSTGRES_PASSWORD`: cambiar en la BD y en el entorno del backend a la vez;
   luego reiniciar el backend.
-- Passwords de usuarios: reset por admin (ver §5).
+- Passwords de usuarios: reset por admin (ver §8).
 
-## 9. Checklist de producción
+## 11. Checklist de producción
 
 - [ ] VPN conectada y acceso verificado a `192.168.80.17`
-- [ ] Dominio apuntando a la IP correcta (pública o VPN) y TLS funcionando
-- [ ] Firewall: solo 80/443 (y 22 desde VPN); PostgreSQL y backend sin puertos públicos
+- [ ] Router redirigiendo 80 y 443 al VPS
+- [ ] Dominio gratuito apuntando a `186.144.148.182` y certificado válido
+- [ ] Sin puertos 5432/8000/3000 publicados (`docker compose ps`)
 - [ ] `APP_ENV=production`, `COOKIE_SECURE=True`, `SEED_DEMO_USERS=False`
-- [ ] `JWT_SECRET` y `POSTGRES_PASSWORD` aleatorios y guardados en el gestor de secretos
+- [ ] `JWT_SECRET` y `POSTGRES_PASSWORD` aleatorios y guardados fuera del repo
 - [ ] Password del admin inicial cambiada tras el primer login
 - [ ] HTTPS válido y WebSocket funcionando por `wss://`
 - [ ] `/health` y `/health/ready` en verde
 - [ ] Backup automático configurado + restore probado
-- [ ] Logs accesibles y sin errores 5xx en el smoke test
+- [ ] Logs sin errores 5xx en el smoke test (`docs/ACEPTACION.md`)
 - [ ] Usuarios reales creados y usuarios demo desactivados
-- [ ] Tag de release y handover entregados
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
 | Síntoma | Causa probable | Acción |
 |---|---|---|
+| Caddy no obtiene certificado | 80 no redirigido o dominio mal escrito | Revisar router, DNS y `logs caddy` |
 | El backend no arranca en prod | Validación de configuración | Leer el error: indica la variable insegura |
 | Login responde 401 tras reiniciar | `JWT_SECRET` cambió | Volver a iniciar sesión (esperado) |
 | El tablero no se actualiza | WS bloqueado por proxy | Enrutar `/ws/*` al backend y permitir upgrade |
 | `401` en el frontend | Cookie `Secure` sobre HTTP | Usar HTTPS o `COOKIE_SECURE=False` en dev |
 | 429 en login | Rate limit (20/min por IP) | Esperar la ventana o revisar `RATE_LIMIT_ENABLED` |
+| Docker expone puertos que no quería | Falta el override de producción | Usar `-f docker-compose.prod.yml` con `!reset` |

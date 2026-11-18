@@ -1,0 +1,27 @@
+# =============================================================================
+# docker-compose.prod.yml — Override de produccion (VPS + Caddy)
+#
+# Uso (desde infra/):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --profile proxy up -d --build
+#
+# Solo Caddy publica 80/443. PostgreSQL, backend y frontend quedan dentro de
+# la red de Docker: no son alcanzables desde el router ni desde internet.
+#
+# Nota: Docker Compose CONCATENA las listas `ports`, asi que `ports: []` no
+# borraria los puertos del compose base. Se usa la etiqueta `!reset` (Compose
+# >= 2.24) para eliminarlos de verdad.
+# =============================================================================
+
+services:
+  db:
+    ports: !reset []
+
+  backend:
+    ports: !reset []
+
+  frontend:
+    ports: !reset []
+
+  # Caddy hereda del compose base (perfil "proxy"): publica 80/443 y usa
+  # DOMAIN del .env para obtenere el certificado con el reto HTTP-01.
