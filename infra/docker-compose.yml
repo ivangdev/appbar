@@ -76,7 +76,9 @@ services:
       context: ../frontend
       args:
         # URL que usara el navegador para el WebSocket (no la interna).
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        # Guion sin dos puntos: si la variable esta VACIA se respeta el vacio
+        # (mismo-origin/WSS). Con :- un valor vacio caeria en localhost:8000.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL-http://localhost:8000}
         # URL interna (server-side) del proxy Next /api/* -> backend.
         # Es build-time: cambiarla exige reconstruir la imagen.
         API_INTERNAL_URL: http://backend:8000

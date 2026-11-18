@@ -40,3 +40,43 @@
 		reverse_proxy frontend:3000
 	}
 }
+
+# =============================================================================
+# Tunel saliente (Serveo) — alternativa cuando el router no permite abrir
+# puertos. Serveo termina TLS y envia HTTP plano a este host; por eso se
+# declara con http:// (auto_https desactivado para este site).
+# El ruteo es identico al del dominio principal.
+# =============================================================================
+http://posbar-app-bar.serveo.net {
+	@ws path /ws/*
+	handle @ws {
+		reverse_proxy backend:8000
+	}
+
+	@health path /health /health/*
+	handle @health {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
+
+# Catch-all HTTP para tuneles sin dominio propio (Cloudflare Quick Tunnel):
+# cualquier Host que llegue por el puerto 80 se enruta igual que el principal.
+http:// {
+	@ws path /ws/*
+	handle @ws {
+		reverse_proxy backend:8000
+	}
+
+	@health path /health /health/*
+	handle @health {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

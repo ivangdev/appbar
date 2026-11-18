@@ -73,6 +73,62 @@ registro actualizado con cron en el VPS:
 
 El `DOMAIN` de `infra/.env` debe ser exactamente ese nombre.
 
+## 3.1. Acceso sin abrir el router (túnel saliente)
+
+Si no se tiene acceso administrativo al router (por ejemplo, equipo gestionado
+por el ISP), se puede publicar el POS con un túnel saliente. No abre puertos y
+no requiere dominio de pago:
+
+```bash
+# En el VPS, una sola vez:
+mkdir -p ~/.local/bin
+curl -fsSL -o ~/.local/bin/cloudflared \
+  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+chmod +x ~/.local/bin/cloudflared
+```
+
+Servicio `~/.config/systemd/user/cloudflared-posbar.service`:
+
+```ini
+[Unit]
+Description=Cloudflare Quick Tunnel para POS Bar
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/ivan/.local/bin/cloudflared tunnel --no-autoupdate --url http://localhost:80
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now cloudflared-posbar.service
+sudo loginctl enable-linger ivan     # para que arranque aunque no haya login
+```
+
+El `Caddyfile` incluye un site `http://` catch-all que enruta cualquier Host
+recibido por el puerto 80 exactamente igual que el dominio principal
+(`/ws/*` y `/health*` al backend, resto al frontend). Así el túnel entra por
+Caddy y no hay que duplicar el ruteo.
+
+Para saber la URL asignada:
+
+```bash
+journalctl --user -u cloudflared-posbar.service --no-pager -n 80 \
+  | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -1
+```
+
+**Limitación:** un *Quick Tunnel* asigna una URL aleatoria que cambia cuando se
+reinicia el servicio o el servidor. Es adecuada para pruebas y acceso inmediato,
+pero **no es una dirección permanente**. Para una URL fija sin tocar el router,
+hay que usar un túnel nombrado de Cloudflare con un dominio propio (de pago) o
+abrir los puertos 80/443 en el router y usar el dominio gratuito DuckDNS.
+
 ## 4. Variables de entorno
 
 Copiar `infra/.env.example` a `infra/.env` en el VPS y ajustar:
