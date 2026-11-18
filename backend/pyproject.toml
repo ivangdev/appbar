@@ -1,0 +1,71 @@
+# =============================================================================
+# pyproject.toml — Backend POS Bar
+#
+# Dependencias base de la Fase 1 (BD):
+#   - SQLAlchemy 2: ORM = "mapear" tablas de Postgres a objetos Python.
+#   - Alembic: migraciones versionadas del esquema.
+#   - psycopg: driver que habla el protocolo de PostgreSQL.
+#   - FastAPI + uvicorn: servidor web (se usa desde Fase 2).
+#   - pydantic-settings: lee config desde .env / variables de entorno.
+# =============================================================================
+[project]
+name = "pos-bar-backend"
+version = "0.1.0"
+description = "Backend POS Bar — FastAPI + SQLAlchemy + PostgreSQL"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0.36",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+    "pwdlib[argon2]>=0.2",
+    "pyjwt>=2.9",
+    "email-validator>=2.2",
+    "slowapi>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+# ---------------------------------------------------------------------------
+# Lint (ruff) — mismo estilo que pide AGENTS.md
+# https://docs.astral.sh/ruff/
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]  # la longitud se controla con line-length
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# Tipos (mypy estricto) — AGENTS.md pide `mypy backend/app --strict`
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

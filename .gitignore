@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets — NUNCA commitear (.env real)
+.env
+.env.local
+.env*.local
+
+# Docker / datos locales
+*.pem
+pg-data/
+caddy_data/
+caddy_config/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+
+# Next.js test/build artifacts
+frontend/test-results/
+frontend/playwright-report/
+frontend/tsconfig.tsbuildinfo
+frontend/coverage/

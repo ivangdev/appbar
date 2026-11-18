@@ -1,0 +1,25 @@
+# =============================================================================
+# Caddyfile — Reverse proxy para produccion (Dokploy / VPS con HTTPS)
+#
+# Reemplaza {$DOMAIN} por tu dominio real (o define DOMAIN en el entorno).
+# Caddy obtiene TLS automaticamente (Let's Encrypt).
+#
+# Enrutamiento:
+#   /ws/*  -> backend  (WebSocket: NO pasa por el proxy de Next)
+#   /*     -> frontend (Next reenvia /api/* al backend server-side)
+# =============================================================================
+
+{$DOMAIN:pos.localhost} {
+	encode zstd gzip
+
+	# WebSocket de mesas (handshake con cookie HttpOnly).
+	@ws path /ws/*
+	handle @ws {
+		reverse_proxy backend:8000
+	}
+
+	# Todo lo demas lo sirve Next.js (incluye /api/* que Next proxya al backend).
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

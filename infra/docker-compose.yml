@@ -1,0 +1,72 @@
+# =============================================================================
+# docker-compose.yml — POS Bar (stack completo: db + backend + frontend)
+#
+# USO (dev local):
+#   cd infra && cp .env.example .env
+#   docker compose up --build
+#   # Backend:  http://localhost:8000/docs
+#   # Frontend: http://localhost:3000
+#
+# Lee las credenciales del archivo .env de esta carpeta.
+# En produccion (Dokploy) normalmente se despliega cada servicio por separado;
+# este compose sirve para levantar todo el stack de una vez (local o VPS).
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: posbar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+    container_name: posbar-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_HOURS: ${ACCESS_TOKEN_EXPIRE_HOURS:-24}
+      COOKIE_SECURE: ${COOKIE_SECURE:-False}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../frontend
+      args:
+        # URL que usara el navegador para el WebSocket (no la interna).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: posbar-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # URL interna (server-side) del proxy Next /api/* -> backend.
+      API_INTERNAL_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:
