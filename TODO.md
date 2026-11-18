@@ -138,19 +138,23 @@ Fuente de verdad: `specs/PDR.yaml` (v1.4). Spec REST: `specs/openapi.yaml` (v1.4
 - [x] Frontend: historial de órdenes, exportación CSV del corte, confirmaciones de acciones.
 - [x] Next.js **16.4.6** (advisory de seguridad corregido) en worktree `worktree/next-security-upgrade`.
 - [x] `ruff check` / `ruff format --check` / `mypy --strict` limpios.
-- [x] Tests backend **68** pasando contra PostgreSQL real (migraciones desde cero).
+- [x] Tests backend **74** pasando contra PostgreSQL real (incluye validación de config de producción).
 - [x] Tests frontend **11** (vitest), `lint`, `tsc --noEmit` y `next build` OK.
-- [x] E2E **4** pasando contra el stack real (dos corridas seguidas).
+- [x] E2E **10** pasando contra el stack Docker: flujo completo, WS, CSV y móvil (dos corridas seguidas).
 - [x] E2E idempotente (nombres únicos) + E2E de WebSocket con dos sesiones.
 - [x] CI en `.github/workflows/ci.yml`: backend (Postgres), frontend + contrato, E2E con Compose.
-- [x] Docs: `README.md`, `docs/DEPLOY.md` (Dokploy, backups, rotación, checklist).
+- [x] Docs: `README.md`, `docs/DEPLOY.md` (Dokploy, VPN, backups, rotación), `docs/ACEPTACION.md`, `CHANGELOG.md`.
+- [x] Scripts `infra/backup.sh` / `restore.sh` verificados con un backup/restore real.
+- [x] Dependencias: `shadcn` a dev, axios/vitest/vite actualizados; `npm audit --omit=dev` = 0.
+- [x] Acceso VPS documentado: VPN `192.168.80.17`, firewall y TLS con IP privada.
 - [x] Specs sincronizadas: PDR 1.4, OpenAPI 1.4.0, FastAPI 1.4.0, `api-types.ts` regenerado.
 
 ## Estado de validación continua
 - [x] `openapi.yaml` válido + `api-types.ts` regenerado sin diff (v1.4.0)
 - [x] Migraciones alineadas al `PDR.yaml` (spec-driven), aplicadas desde cero en CI/local
-- [x] 68 tests backend pasando (`pytest tests/ -q`) contra PostgreSQL 16
+- [x] 74 tests backend pasando (`pytest tests/ -q`) contra PostgreSQL 16
 - [x] Frontend construye y pasa lint + tsc + vitest (11 tests)
+- [x] E2E 10/10 (escritorio + móvil) y auditoría de producción sin vulnerabilidades
 
 ## Incidencias
 - [x] Reparados `app/api/v1/auth.py` y `app/schemas/user.py` (habían quedado como
@@ -173,7 +177,7 @@ Fuente de verdad: `specs/PDR.yaml` (v1.4). Spec REST: `specs/openapi.yaml` (v1.4
 - [x] E2E Playwright ejecutado localmente (4/4, dos veces seguidas para probar
       idempotencia) con stack real (uvicorn + Next + PostgreSQL): flujo completo,
       login de mesero y WebSocket con dos sesiones.
-- [x] E2E 4/4 ejecutado también contra el **stack Docker** (`docker compose up --build`).
+- [x] E2E 10/10 ejecutado también contra el **stack Docker** (`docker compose up --build`).
 - [x] Build real de imágenes Docker verificado (backend + frontend), healthchecks,
       migraciones y seed al arrancar.
 - [x] Perfil Caddy verificado: HTTPS (`https://pos.localhost` → `/health/ready`, login

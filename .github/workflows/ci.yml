@@ -104,6 +104,9 @@ jobs:
           npm run gen:types
           git diff --exit-code -- lib/api-types.ts
 
+      - name: Auditoria de dependencias de produccion
+        run: npm audit --omit=dev --audit-level=high
+
   # ---------------------------------------------------------------------------
   # E2E: stack completo con Docker Compose + Playwright (incluye WebSocket).
   # ---------------------------------------------------------------------------

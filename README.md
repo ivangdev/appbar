@@ -86,6 +86,13 @@ npm run gen:types      # regenera lib/api-types.ts desde specs/openapi.yaml
 npm run e2e            # requiere el stack levantado + navegadores de Playwright
 ```
 
+### Operación (`infra/`)
+
+```bash
+./backup.sh            # backup de PostgreSQL (formato custom)
+./restore.sh backups/posbar-<fecha>.dump
+```
+
 ## Estructura
 
 ```
@@ -93,7 +100,9 @@ app-bar/
 ├── specs/PDR.yaml          # spec maestra (fuente de verdad)
 ├── specs/openapi.yaml      # contrato REST
 ├── docs/CLIENT_SPEC.md     # requisitos para el cliente
-├── docs/DEPLOY.md          # despliegue, backups y checklist
+├── docs/DEPLOY.md          # despliegue, VPN, backups y checklist
+├── docs/ACEPTACION.md      # checklist firmable de entrega
+├── CHANGELOG.md            # historial de versiones
 ├── backend/                # FastAPI + SQLAlchemy + Alembic
 ├── frontend/               # Next.js 16 (App Router)
 └── infra/                  # docker-compose, Caddyfile, .env.example

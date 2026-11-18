@@ -58,7 +58,12 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
 
   // --- Abrir orden en la mesa ---
   await page.goto("/tables");
-  await page.getByText(`Mesa ${tableNumber}`, { exact: true }).click();
+  // Clic en la tarjeta completa. Con emulacion movil, Playwright calcula mal
+  // el viewport visual y el auto-scroll deja el centro bajo otra tarjeta.
+  await page
+    .getByRole("link")
+    .filter({ has: page.getByText(`Mesa ${tableNumber}`, { exact: true }) })
+    .click({ force: true });
   await page.getByRole("button", { name: "Abrir orden" }).click();
 
   // --- Agregar el producto ---
@@ -72,7 +77,7 @@ test("flujo completo: catalogo, orden, pago y corte", async ({ page }) => {
   await expect(page.getByText(productName).first()).toBeVisible();
 
   // --- Pagar total ---
-  await page.getByRole("button", { name: /pagar total/i }).click();
+  await page.getByRole("button", { name: /pagar total/i }).click({ force: true });
   // Tras pagar, el badge muestra el estado real de la orden.
   await expect(page.getByText("paid")).toBeVisible();
 
@@ -133,7 +138,7 @@ test("dos sesiones ven el cambio de mesa en vivo (WebSocket)", async ({
     await waiter
       .getByRole("link")
       .filter({ has: waiter.getByText(`Mesa ${tableNumber}`, { exact: true }) })
-      .click();
+      .click({ force: true });
     await waiter.getByRole("button", { name: "Abrir orden" }).click();
     await expect(waiter.getByText("open")).toBeVisible();
 

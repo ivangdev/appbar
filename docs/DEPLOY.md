@@ -16,7 +16,41 @@ navegador ──HTTPS/WSS──> Caddy ──> frontend (Next.js, :3000)
 - En producción el navegador no necesita saber la URL del backend: deja
   `NEXT_PUBLIC_API_URL` **vacío** para usar el origin actual.
 
-## 2. Variables de entorno
+## 2. Acceso por VPN
+
+El servidor del proyecto se alcanza dentro de la VPN en:
+
+```
+VPS (VPN IP): 192.168.80.17
+```
+
+- Conéctate primero a OpenVPN (perfil `~/vpn/ivan_vpn.ovpn`) y después usa esa IP
+  para SSH y para las pruebas HTTP.
+- Si el POS será **solo interno**, el dominio debe resolver a `192.168.80.17` y
+  el firewall debe permitir 80/443 únicamente desde la red VPN.
+- Si el POS será **público**, usa la IP pública del VPS y mantén la VPN solo para
+  administración (SSH/DB). En ese caso no publiques los puertos del backend ni
+  de PostgreSQL a internet.
+- Con IP privada, Caddy **no puede** usar el reto HTTP-01 de Let's Encrypt: hay que
+  configurar el reto DNS-01 (o un certificado interno) para HTTPS.
+
+Antes de desplegar, agrega este override de producción para no exponer puertos:
+
+```yaml
+# infra/docker-compose.prod.yml (fragmento)
+services:
+  db:
+    ports: []
+  backend:
+    ports: []
+  frontend:
+    ports: []
+```
+
+Caddy sigue publicando 80/443; si el acceso es solo por VPN, restringe esos
+puertos en UFW a la interfaz/subred de la VPN.
+
+## 3. Variables de entorno
 
 Copia `infra/.env.example` a `infra/.env` (o configúralas en Dokploy).
 
@@ -39,7 +73,7 @@ Con `APP_ENV=production` la app **falla al arrancar** si detecta el secreto de
 desarrollo, `JWT_SECRET` corto, `COOKIE_SECURE=False`, la password de admin por
 defecto o `SEED_DEMO_USERS=True`.
 
-## 3. Despliegue con Docker Compose
+## 4. Despliegue con Docker Compose
 
 ```bash
 cd infra
@@ -57,7 +91,7 @@ docker compose --profile proxy up -d --build
 
 Caddy usa `DOMAIN`; para pruebas locales `pos.localhost` funciona sin DNS.
 
-## 4. Despliegue en Dokploy
+## 5. Despliegue en Dokploy
 
 1. Crear un proyecto y una base **PostgreSQL** (o usar el servicio `db` del
    compose). Anotar host/puerto/credenciales internas.
@@ -77,7 +111,7 @@ Caddy usa `DOMAIN`; para pruebas locales `pos.localhost` funciona sin DNS.
 5. Smoke test: login → abrir mesa → agregar ítem → abono parcial → pago total →
    corte del día. Verificar que otra sesión ve la mesa cambiar sin recargar.
 
-## 5. Migraciones y seed
+## 6. Migraciones y seed
 
 - Al arrancar el contenedor: `alembic upgrade head && python -m app.db.seed`.
 - Manual:
@@ -90,20 +124,22 @@ Caddy usa `DOMAIN`; para pruebas locales `pos.localhost` funciona sin DNS.
 - Reset de password de un usuario: `PATCH /v1/users/{id}` con `{"password": "..."}`
   usando una sesión de admin (también disponible en Admin → Usuarios).
 
-## 6. Backups de PostgreSQL
+## 7. Backups de PostgreSQL
 
-Respaldo diario (ejemplo con cron en el host):
+Los scripts `infra/backup.sh` e `infra/restore.sh` usan el formato custom de
+`pg_dump` (más seguro para restaurar):
 
 ```bash
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  | gzip > /var/backups/posbar-$(date +%F).sql.gz
+cd infra
+./backup.sh                      # crea backups/posbar-<fecha>.dump
+BACKUP_DIR=/var/backups/posbar ./backup.sh
+./restore.sh backups/posbar-2026-11-18-120000.dump
 ```
 
-Restore:
+Respaldo diario con cron (ajusta la ruta y el usuario):
 
-```bash
-gunzip -c /var/backups/posbar-2026-11-18.sql.gz \
-  | docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+```cron
+0 3 * * * cd /home/krei/Dev/app-bar/infra && BACKUP_DIR=/var/backups/posbar ./backup.sh >> /var/log/posbar-backup.log 2>&1
 ```
 
 Recomendaciones:
@@ -113,7 +149,7 @@ Recomendaciones:
 - Probar el restore al menos una vez antes de la entrega.
 - `docker compose down` **sin** `-v` conserva el volumen `db_data`.
 
-## 7. Rotación de secretos
+## 8. Rotación de secretos
 
 - `JWT_SECRET`: al cambiarlo se invalidan todas las sesiones (los usuarios
   vuelven a hacer login). Hazlo fuera de horario de servicio.
@@ -121,8 +157,11 @@ Recomendaciones:
   luego reiniciar el backend.
 - Passwords de usuarios: reset por admin (ver §5).
 
-## 8. Checklist de producción
+## 9. Checklist de producción
 
+- [ ] VPN conectada y acceso verificado a `192.168.80.17`
+- [ ] Dominio apuntando a la IP correcta (pública o VPN) y TLS funcionando
+- [ ] Firewall: solo 80/443 (y 22 desde VPN); PostgreSQL y backend sin puertos públicos
 - [ ] `APP_ENV=production`, `COOKIE_SECURE=True`, `SEED_DEMO_USERS=False`
 - [ ] `JWT_SECRET` y `POSTGRES_PASSWORD` aleatorios y guardados en el gestor de secretos
 - [ ] Password del admin inicial cambiada tras el primer login
@@ -133,7 +172,7 @@ Recomendaciones:
 - [ ] Usuarios reales creados y usuarios demo desactivados
 - [ ] Tag de release y handover entregados
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Síntoma | Causa probable | Acción |
 |---|---|---|
